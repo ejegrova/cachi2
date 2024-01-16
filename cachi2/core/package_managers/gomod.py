@@ -16,6 +16,7 @@ from typing import (
     Iterator,
     Literal,
     NamedTuple,
+    NewType,
     NoReturn,
     Optional,
     Tuple,
@@ -49,6 +50,11 @@ log = logging.getLogger(__name__)
 GOMOD_DOC = "https://github.com/containerbuildsystem/cachi2/blob/main/docs/gomod.md"
 GOMOD_INPUT_DOC = f"{GOMOD_DOC}#specifying-modules-to-process"
 VENDORING_DOC = f"{GOMOD_DOC}#vendoring"
+
+
+# TODO: this should actually be a dict[str, Union[str, bool]]
+# but we don't actually use the property that is a boolean
+ModuleDict = NewType("ModuleDict", dict[str, str])
 
 
 class _ParsedModel(pydantic.BaseModel):
@@ -811,12 +817,16 @@ def _resolve_gomod(
         # Make Go ignore the vendor dir even if there is one
         go_list.extend(["-mod", "readonly"])
 
-    main_module_name = go([*go_list, "-m"], run_params).rstrip()
-    main_module = ParsedModule(
-        path=main_module_name,
-        version=version_resolver.get_golang_version(main_module_name, app_dir),
-        main=True,
+    modules_json_stream = go([*go_list, "-m", "-json"], run_params).rstrip()
+    main_module_dict, workspace_dict_list = _process_modules_json_stream(
+        app_dir, modules_json_stream
     )
+
+    main_module = _parse_main_module(app_dir, main_module_dict, version_resolver)
+    workspace_modules = [
+        _parse_workspace_module(app_dir, workspace_dict, main_module)
+        for workspace_dict in workspace_dict_list
+    ]
 
     def go_list_deps(pattern: Literal["./...", "all"]) -> Iterator[ParsedPackage]:
         """Run go list -deps -json and return the parsed list of packages.
@@ -829,10 +839,10 @@ def _resolve_gomod(
         cmd = [*go_list, "-deps", "-json=ImportPath,Module,Standard,Deps", pattern]
         return map(ParsedPackage.model_validate, load_json_stream(go(cmd, run_params)))
 
-    package_modules = (
+    package_modules = [
         module for pkg in go_list_deps("all") if (module := pkg.module) and not module.main
-    )
-
+    ]
+    package_modules.extend(workspace_modules)
     all_modules = _deduplicate_resolved_modules(package_modules, downloaded_modules)
 
     log.info("Retrieving the list of packages")
@@ -841,6 +851,54 @@ def _resolve_gomod(
     _validate_local_replacements(all_modules, app_dir)
 
     return ResolvedGoModule(main_module, all_modules, all_packages, modules_in_go_sum)
+
+
+def _process_modules_json_stream(
+    app_dir: RootedPath, modules_json_stream: str
+) -> tuple[ModuleDict, list[ModuleDict]]:
+    module_list = []
+    main_module = None
+
+    for i, module in enumerate(load_json_stream(modules_json_stream)):
+        if module["Dir"] == str(app_dir):
+            main_module = module
+        else:
+            module_list.append(module)
+
+    # should never happen
+    if not main_module:
+        raise RuntimeError('Failed to find the main module info in the "go list -e" output.')
+
+    return main_module, module_list
+
+
+def _parse_main_module(
+    app_dir: RootedPath,
+    main_module_dict: ModuleDict,
+    version_resolver: "ModuleVersionResolver",
+) -> ParsedModule:
+    return ParsedModule(
+        path=main_module_dict["Path"],
+        version=version_resolver.get_golang_version(main_module_dict["Path"], app_dir),
+        main=True,
+    )
+
+
+def _parse_workspace_module(
+    app_dir: RootedPath, module: ModuleDict, main_module: ParsedModule
+) -> ParsedModule:
+    relative_dir = Path(module["Dir"]).relative_to(app_dir.root)
+
+    # Since we want to treat a workspace module the same way we treat a locally replaced module,
+    # we need to prepend "./" to its path.
+    # See the _create_modules_from_parsed_data function for more details
+    replaced_module = ParsedModule(path=f"./{relative_dir}")
+
+    return ParsedModule(
+        path=module["Path"],
+        version=main_module.version,
+        replace=replaced_module,
+    )
 
 
 def _parse_go_sum(module_dir: RootedPath) -> frozenset[ModuleID]:
