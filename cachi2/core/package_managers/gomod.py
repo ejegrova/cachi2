@@ -811,7 +811,45 @@ def _resolve_gomod(
         # Make Go ignore the vendor dir even if there is one
         go_list.extend(["-mod", "readonly"])
 
-    main_module_name = go([*go_list, "-m"], run_params).rstrip()
+    go_list_modules = go([*go_list, "-m", "-json"], run_params).rstrip()
+    module_list = list(load_json_stream(go_list_modules))
+    module_list_paths = [RootedPath(module["Dir"]) for module in module_list]
+
+    for index, module_path in enumerate(module_list_paths):
+        if app_dir.path == module_path.path:
+            raw_main_module = module_list.pop(index)
+            break
+    try:
+        main_module_name = raw_main_module["Path"]
+    except NameError:
+        raise PackageManagerError(f"Main module not found, it should have been at {app_dir.path}.")
+
+    def get_relative_path_workspace_to_main_module(path1: Path, path2: Path) -> str:
+        """Return relative path from workspace module to main module."""
+        if not path2.is_relative_to(app_dir.root):
+            raise PackageManagerError(
+                f"Workspace module path {path2} is not relative to root path {app_dir.root}."
+            )
+        relative_path = os.path.relpath(path2, path1)
+        return f"./{relative_path}"
+
+    workspace_modules = []
+    if len(module_list) > 0:
+        workspace_module_version = version_resolver.get_golang_version(main_module_name, app_dir)
+        for module in module_list:
+            replaced_module = ParsedModule(
+                path=get_relative_path_workspace_to_main_module(
+                    Path(raw_main_module["Dir"]), Path(module["Dir"])
+                )
+            )
+            workspace_modules.append(
+                ParsedModule(
+                    path=module["Path"],
+                    version=workspace_module_version,
+                    replace=replaced_module,
+                ),
+            )
+
     main_module = ParsedModule(
         path=main_module_name,
         version=version_resolver.get_golang_version(main_module_name, app_dir),
@@ -829,10 +867,10 @@ def _resolve_gomod(
         cmd = [*go_list, "-deps", "-json=ImportPath,Module,Standard,Deps", pattern]
         return map(ParsedPackage.model_validate, load_json_stream(go(cmd, run_params)))
 
-    package_modules = (
+    package_modules = [
         module for pkg in go_list_deps("all") if (module := pkg.module) and not module.main
-    )
-
+    ]
+    package_modules.extend(workspace_modules)
     all_modules = _deduplicate_resolved_modules(package_modules, downloaded_modules)
 
     log.info("Retrieving the list of packages")
