@@ -799,6 +799,18 @@ def _resolve_gomod(
     should_vendor, can_make_changes = _should_vendor_deps(
         flags, app_dir, config.gomod_strict_vendor
     )
+
+    go_list = ["list", "-e"]
+    if not should_vendor:
+        # Make Go ignore the vendor dir even if there is one
+        go_list.extend(["-mod", "readonly"])
+
+    go_list_modules = go([*go_list, "-m", "-json"], run_params).rstrip()
+    module_list = list(load_json_stream(go_list_modules))
+    module_list_paths = [RootedPath(module["Dir"]) for module in module_list]
+
+    modules_in_go_sum = _parse_go_sum_files(app_dir, module_list_paths)
+
     if should_vendor:
         downloaded_modules = _vendor_deps(go, app_dir, can_make_changes, run_params)
     else:
@@ -811,15 +823,6 @@ def _resolve_gomod(
     if "force-gomod-tidy" in flags:
         go(["mod", "tidy"], run_params)
 
-    go_list = ["list", "-e"]
-    if not should_vendor:
-        # Make Go ignore the vendor dir even if there is one
-        go_list.extend(["-mod", "readonly"])
-
-    go_list_modules = go([*go_list, "-m", "-json"], run_params).rstrip()
-    module_list = list(load_json_stream(go_list_modules))
-    module_list_paths = [RootedPath(module["Dir"]) for module in module_list]
-
     for index, module_path in enumerate(module_list_paths):
         if app_dir.path == module_path.path:
             raw_main_module = module_list.pop(index)
@@ -828,8 +831,6 @@ def _resolve_gomod(
         main_module_name = raw_main_module["Path"]
     except NameError:
         raise PackageManagerError(f"Main module not found, it should have been at {app_dir.path}.")
-
-    modules_in_go_sum = _parse_go_sum_files(app_dir, module_list_paths)
 
     def get_relative_path_workspace_to_main_module(path1: Path, path2: Path) -> str:
         """Return relative path from workspace module to main module."""
