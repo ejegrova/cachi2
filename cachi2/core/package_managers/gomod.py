@@ -761,6 +761,7 @@ def _resolve_gomod(
 
     run_params = {"env": env, "cwd": app_dir}
 
+    # TODO is important go version for workspaces? Different modules could have different go versions
     go = Go()
     go1_21 = version.Version("1.21")
     go_base_version = go.version
@@ -794,6 +795,17 @@ def _resolve_gomod(
         # projects in the ecosystem adopt 1.21, we need a fallback to an older toolchain version.
         go = Go(release="go1.20")
 
+    workspaces_enabled = go(["env", "GOWORK"], run_params).rstrip()
+    if workspaces_enabled:
+        modules = parse_go_work_modules(go, run_params)  # outputs list of paths
+        module_list_paths = [
+            RootedPath(app_dir.root).join_within_root(module_path) for module_path in modules
+        ]
+    else:
+        module_list_paths = [app_dir]
+
+    modules_in_go_sum = _parse_go_sum_files(app_dir, module_list_paths)
+
     # Vendor dependencies if the gomod-vendor flag is set
     flags = request.flags
     should_vendor, can_make_changes = _should_vendor_deps(
@@ -816,10 +828,13 @@ def _resolve_gomod(
         # Make Go ignore the vendor dir even if there is one
         go_list.extend(["-mod", "readonly"])
 
+    # TODO what to do here? keep it?
+    # used: module["Dir"], module["Path"]
+    #
     go_list_modules = go([*go_list, "-m", "-json"], run_params).rstrip()
     module_list = list(load_json_stream(go_list_modules))
-    module_list_paths = [RootedPath(module["Dir"]) for module in module_list]
-
+    # module_list_paths = [RootedPath(module["Dir"]) for module in module_list]
+    breakpoint()
     for index, module_path in enumerate(module_list_paths):
         if app_dir.path == module_path.path:
             raw_main_module = module_list.pop(index)
@@ -828,8 +843,6 @@ def _resolve_gomod(
         main_module_name = raw_main_module["Path"]
     except NameError:
         raise PackageManagerError(f"Main module not found, it should have been at {app_dir.path}.")
-
-    modules_in_go_sum = _parse_go_sum_files(app_dir, module_list_paths)
 
     def get_relative_path_workspace_to_main_module(path1: Path, path2: Path) -> str:
         """Return relative path from workspace module to main module."""
@@ -890,6 +903,24 @@ def _resolve_gomod(
     return ResolvedGoModule(
         main_module, all_modules, all_packages, modules_in_go_sum, contains_workspaces
     )
+
+
+def parse_go_work_modules(
+    go: Go,
+    run_params: dict[str, Any],
+):
+    # TODO skip if no workspaces
+    #     ➜ go work edit -json
+    #       go: no go.work file found
+    # 	    (run 'go work init' first or specify path using GOWORK environment variable)
+
+    go_work = go(["work", "edit", "-json"], run_params).rstrip()
+    module_paths = list()
+    for obj in load_json_stream(go_work):
+        for module in obj["Use"]:
+            module_paths.append(module["DiskPath"])
+
+    return module_paths
 
 
 def _parse_go_sum_files(
