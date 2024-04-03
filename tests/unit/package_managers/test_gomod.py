@@ -32,6 +32,7 @@ from cachi2.core.package_managers.gomod import (
     _create_packages_from_parsed_data,
     _deduplicate_resolved_modules,
     _get_gomod_version,
+    _get_local_module_dirs,
     _get_repository_name,
     _parse_go_sum,
     _parse_vendor,
@@ -151,6 +152,7 @@ def test_resolve_gomod(
 
     # Mock the "subprocess.run" calls
     run_side_effects = []
+    run_side_effects.append(proc_mock("go env GOWORK", returncode=0, stdout=""))
     run_side_effects.append(
         proc_mock(
             "go mod download -json",
@@ -206,7 +208,7 @@ def test_resolve_gomod(
     resolve_result = _resolve_gomod(module_dir, gomod_request, tmp_path, mock_version_resolver)
 
     if force_gomod_tidy:
-        assert mock_run.call_args_list[1][0][0] == [GO_CMD_PATH, "mod", "tidy"]
+        assert mock_run.call_args_list[2][0][0] == [GO_CMD_PATH, "mod", "tidy"]
 
     # when not vendoring, go list should be called with -mod readonly
     listdeps_cmd = [
@@ -261,6 +263,7 @@ def test_resolve_gomod_vendor_dependencies(
 
     # Mock the "subprocess.run" calls
     run_side_effects = []
+    run_side_effects.append(proc_mock("go env GOWORK", returncode=0, stdout=""))
     run_side_effects.append(proc_mock("go mod vendor", returncode=0, stdout=None))
     if force_gomod_tidy:
         run_side_effects.append(proc_mock("go mod tidy", returncode=0, stdout=None))
@@ -309,7 +312,7 @@ def test_resolve_gomod_vendor_dependencies(
 
     resolve_result = _resolve_gomod(module_dir, gomod_request, tmp_path, mock_version_resolver)
 
-    assert mock_run.call_args_list[0][0][0] == [GO_CMD_PATH, "mod", "vendor"]
+    assert mock_run.call_args_list[1][0][0] == [GO_CMD_PATH, "mod", "vendor"]
     # when vendoring, go list should be called without -mod readonly
     assert mock_run.call_args_list[-2][0][0] == [
         GO_CMD_PATH,
@@ -392,6 +395,7 @@ def test_resolve_gomod_no_deps(
 
     # Mock the "subprocess.run" calls
     run_side_effects = []
+    run_side_effects.append(proc_mock("go env GOWORK", returncode=0, stdout=""))
     run_side_effects.append(proc_mock("go mod download -json", returncode=0, stdout=""))
     if force_gomod_tidy:
         run_side_effects.append(proc_mock("go mod tidy", returncode=0, stdout=None))
@@ -619,6 +623,83 @@ def test_process_modules_json_stream(
     result = _process_modules_json_stream(app_dir, stream)
 
     assert result == expected_modules
+
+
+@pytest.mark.parametrize(
+    "go_work_use_dirs, go_work_location",
+    [
+        # main module is the same as the source dir, there's one nested workspace
+        ([".", "./workspace"], "."),
+        # go.work is in the source dir, main module and a workspace are nested
+        (["./app", "./workspace"], "."),
+        # main module and go.work are in a child folder of the source dir, the workspace is nested
+        ([".", "./workspace"], "./gomod"),
+        # go.work is in a child folder of the source dir, main module and a workspace are nested
+        (["./app", "./workspace"], "./gomod"),
+    ],
+)
+def test_get_local_module_dirs(
+    go_work_use_dirs: list[str], go_work_location: str, tmp_path: Path
+) -> None:
+    go_work_path = tmp_path.joinpath(go_work_location)
+    go_work_path.mkdir(exist_ok=True)
+
+    for path in go_work_use_dirs:
+        go_work_path.joinpath(path).mkdir(exist_ok=True)
+
+    go_work_content = dedent(
+        """
+        go 1.19
+
+        use (
+            {go_work_use_dirs}
+        )
+        """
+    ).replace("{go_work_use_dirs}", "\n".join(go_work_use_dirs))
+
+    tmp_path.joinpath(f"{go_work_location}/go.work").write_text(go_work_content)
+
+    source_dir = RootedPath(tmp_path)
+    app_dir = source_dir.join_within_root(f"{go_work_location}/{go_work_use_dirs[0]}")
+    
+    dirs = _get_local_module_dirs(app_dir, Go(), run_params={"cwd": app_dir})
+
+    expected_dirs = [
+        RootedPath(tmp_path).join_within_root(f"{go_work_location}/{path}")
+        for path in go_work_use_dirs
+    ]
+
+    assert dirs == expected_dirs
+
+
+def test_go_work_file_outside_root(tmp_path: Path) -> None:
+    go_work_file = dedent(
+        """
+        go 1.19
+
+        use (
+            ./app
+            ./workspace
+        )
+        """
+    )
+
+    tmp_path.joinpath("app").mkdir()
+    tmp_path.joinpath("workspace").mkdir()
+    tmp_path.joinpath("go.work").write_text(go_work_file)
+
+    app_dir = RootedPath(tmp_path.joinpath("app"))
+
+    error_message = f"Joining path '{tmp_path}' to '{app_dir}': target is outside '{app_dir}'"
+    with pytest.raises(PathOutsideRoot, match=error_message):
+        _get_local_module_dirs(app_dir, Go(), run_params={"cwd": app_dir})
+
+
+def test_get_local_module_dirs_without_worksapces(tmp_path: Path) -> None:
+    app_dir = RootedPath(tmp_path)
+    dirs = _get_local_module_dirs(app_dir, Go(), run_params={"cwd": app_dir})
+
+    assert dirs == [app_dir]
 
 
 @mock.patch("cachi2.core.package_managers.gomod.ModuleVersionResolver")
@@ -915,6 +996,7 @@ def test_go_list_cmd_failure(
 
     # Mock the "subprocess.run" calls
     mock_run.side_effect = [
+        proc_mock("go env GOWORK", returncode=0, stdout=""),
         proc_mock("go mod download", returncode=go_mod_rc, stdout=""),
         proc_mock(
             "go list -e -mod readonly -m",
