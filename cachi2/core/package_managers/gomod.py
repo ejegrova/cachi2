@@ -482,8 +482,10 @@ def _create_modules_from_parsed_data(
         if not module.replace:
             # Should not happen, this function will only be called for replaced modules
             raise RuntimeError("Can't resolve path for a module that was not replaced")
-
-        path = f"{main_module.real_path}/{module.replace.path}"
+        if go_work:
+            path = f"{Path(main_module.real_path).parent}/{module.replace.path}"
+        else:
+            path = f"{main_module.real_path}/{module.replace.path}"
 
         platform_specific_path = os.path.normpath(path)
         return Path(platform_specific_path).as_posix()
