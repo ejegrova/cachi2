@@ -174,8 +174,8 @@ log = logging.getLogger(__name__)
         pytest.param(
             utils.TestParameters(
                 repo="https://github.com/cachito-testing/cachi2-gomod.git",
-                ref="51a8e1ae220036a3fc9eb04df7922ed32450b40e",
-                packages=({"path": "./hello", "type": "gomod"},),
+                ref="60b7245b3c5be8e7ac451c2261814648e0af9984",
+                packages=({"path": "./workspace_modules/hello", "type": "gomod"},),
                 check_vendor_checksums=False,
                 expected_exit_code=0,
                 expected_output="All dependencies fetched successfully",
