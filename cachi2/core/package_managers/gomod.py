@@ -836,7 +836,7 @@ def _resolve_gomod(
 
     main_module = _parse_main_module(app_dir, main_module_dict, version_resolver)
     workspace_modules = [
-        _parse_workspace_module(app_dir, workspace_dict, main_module)
+        _parse_workspace_module(workspace_dict, main_module, go_work)
         for workspace_dict in workspace_dict_list
     ]
 
@@ -897,9 +897,9 @@ def _parse_main_module(
 
 
 def _parse_workspace_module(
-    app_dir: RootedPath, module: ModuleDict, main_module: ParsedModule
+    module: ModuleDict, main_module: ParsedModule, go_work: dict
 ) -> ParsedModule:
-    relative_dir = Path(module["Dir"]).relative_to(app_dir.root)
+    relative_dir = Path(module["Dir"]).relative_to(go_work["root"])
 
     # Since we want to treat a workspace module the same way we treat a locally replaced module,
     # we need to prepend "./" to its path.
