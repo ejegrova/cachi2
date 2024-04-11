@@ -31,9 +31,9 @@
           "value": "cachi2"
         }
       ],
-      "purl": "pkg:golang/github.com/cachito-testing/cachi2-gomod/echo@v4.0.0-20240312172139-51a8e1ae2200?type=module",
+      "purl": "pkg:golang/github.com/cachito-testing/cachi2-gomod/workspace_modules/echo@v4.0.0-20240411104201-60b7245b3c5b?type=module",
       "type": "library",
-      "version": "v4.0.0-20240312172139-51a8e1ae2200"
+      "version": "v4.0.0-20240411104201-60b7245b3c5b"
     },
     {
       "name": "example.com/hello",
@@ -43,9 +43,9 @@
           "value": "cachi2"
         }
       ],
-      "purl": "pkg:golang/github.com/cachito-testing/cachi2-gomod/hello@v0.0.0-20240312172139-51a8e1ae2200?type=module",
+      "purl": "pkg:golang/github.com/cachito-testing/cachi2-gomod/workspace_modules/hello@v0.0.0-20240411104201-60b7245b3c5b?type=module",
       "type": "library",
-      "version": "v0.0.0-20240312172139-51a8e1ae2200"
+      "version": "v0.0.0-20240411104201-60b7245b3c5b"
     },
     {
       "name": "example.com/hello",
@@ -55,9 +55,9 @@
           "value": "cachi2"
         }
       ],
-      "purl": "pkg:golang/github.com/cachito-testing/cachi2-gomod/hello@v0.0.0-20240312172139-51a8e1ae2200?type=package",
+      "purl": "pkg:golang/github.com/cachito-testing/cachi2-gomod/workspace_modules/hello@v0.0.0-20240411104201-60b7245b3c5b?type=package",
       "type": "library",
-      "version": "v0.0.0-20240312172139-51a8e1ae2200"
+      "version": "v0.0.0-20240411104201-60b7245b3c5b"
     },
     {
       "name": "example.com/hiii",
@@ -67,9 +67,9 @@
           "value": "cachi2"
         }
       ],
-      "purl": "pkg:golang/github.com/cachito-testing/cachi2-gomod/hi/hiii@v0.0.0-20240312172139-51a8e1ae2200?type=module",
+      "purl": "pkg:golang/github.com/cachito-testing/cachi2-gomod/workspace_modules/hi/hiii@v0.0.0-20240411104201-60b7245b3c5b?type=module",
       "type": "library",
-      "version": "v0.0.0-20240312172139-51a8e1ae2200"
+      "version": "v0.0.0-20240411104201-60b7245b3c5b"
     },
     {
       "name": "github.com/davecgh/go-spew",
