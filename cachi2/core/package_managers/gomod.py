@@ -456,7 +456,7 @@ def _create_modules_from_parsed_data(
 
             if mod_id not in modules_in_go_sum:
                 if go_work_root:
-                    missing_hash_in_file = go_work_root.path / "go.work.sum"
+                    missing_hash_in_file = go_work_root.path / "go.work.sum"  # TODO not unit tested
                 else:
                     missing_hash_in_file = main_module_dir.subpath_from_root / "go.sum"
 
@@ -846,7 +846,7 @@ def _resolve_gomod(
     run_params = {"env": env, "cwd": app_dir}
 
     if go_work_root := _get_go_work_root(app_dir, go, run_params):
-        go_sum_files = _get_go_sum_files(go_work_root, go, run_params)
+        go_sum_files = _get_go_sum_files(go_work_root, go, run_params)  # TODO not unit tested
         modules_in_go_sum = _parse_go_sum_files(go_sum_files)
     else:
         modules_in_go_sum = _parse_go_sum(app_dir.join_within_root("go.sum"))
@@ -1003,7 +1003,9 @@ def _get_go_sum_files(
     return go_sums
 
 
-def _parse_go_sum_files(go_sum_files: list[RootedPath]) -> frozenset[ModuleID]:
+def _parse_go_sum_files(
+    go_sum_files: list[RootedPath],
+) -> frozenset[ModuleID]:  # TODO not unit tested
     """Return the set of modules present in all specified go.sum files."""
     modules: frozenset[ModuleID] = frozenset()
 

@@ -10,6 +10,7 @@ banner-end
 mocked_data_dir=${1:-tests/unit/data/gomod-mocks}
 mkdir -p "$mocked_data_dir/non-vendored"
 mkdir -p "$mocked_data_dir/vendored"
+mkdir -p "$mocked_data_dir/workspaces"
 mocked_data_dir_abspath=$(realpath "$mocked_data_dir")
 
 tmpdir=$(dirname "$(mktemp --dry-run)")
@@ -24,6 +25,14 @@ $(
     # cd in a subshell, doesn't change the $PWD of the main process
     cd "$tmpdir/gomod-pandemonium"
     export GOMODCACHE="$tmpdir/cachi2-mock-gomodcache"
+
+    git switch workspaces
+
+    echo "generating $mocked_data_dir/workspaces/go_list_modules.json"
+    go work edit -json > \
+        "$mocked_data_dir_abspath/workspaces/go_work.json"
+
+    git switch main
 
     echo "generating $mocked_data_dir/non-vendored/go_list_modules.json"
     go list -m -json > \

@@ -133,8 +133,10 @@ def _parse_mocked_data(data_dir: Path, file_path: str) -> ResolvedGoModule:
     return ResolvedGoModule(main_module, modules, packages, modules_in_go_sum)
 
 
+@pytest.mark.parametrize("using_workspaces", [False, True])
 @pytest.mark.parametrize("cgo_disable", [False, True])
 @pytest.mark.parametrize("force_gomod_tidy", [False, True])
+@mock.patch("cachi2.core.package_managers.gomod._get_go_work_root")
 @mock.patch("cachi2.core.package_managers.gomod.Go.release", new_callable=mock.PropertyMock)
 @mock.patch("cachi2.core.package_managers.gomod._get_gomod_version")
 @mock.patch("cachi2.core.package_managers.gomod.ModuleVersionResolver")
@@ -146,6 +148,8 @@ def test_resolve_gomod(
     mock_version_resolver: mock.Mock,
     mock_get_gomod_version: mock.Mock,
     mock_go_release: mock.PropertyMock,
+    mock_get_go_work: mock.Mock,
+    using_workspaces: bool,
     cgo_disable: bool,
     force_gomod_tidy: bool,
     tmp_path: Path,
@@ -156,7 +160,15 @@ def test_resolve_gomod(
 
     # Mock the "subprocess.run" calls
     run_side_effects = []
-    run_side_effects.append(proc_mock("go env GOWORK", returncode=0, stdout=""))
+    if using_workspaces:
+        run_side_effects.append(
+            proc_mock(
+                "go work edit -json",
+                returncode=0,
+                stdout=get_mocked_data(data_dir, "workspaces/go_work.json"),
+            )
+        )
+    # probably else - one go call missing
     run_side_effects.append(
         proc_mock(
             "go mod download -json",
@@ -203,16 +215,27 @@ def test_resolve_gomod(
 
     gomod_request.flags = frozenset(flags)
 
-    module_dir = gomod_request.source_dir.join_within_root("path/to/module")
-    module_dir.path.mkdir(parents=True)
-    module_dir.join_within_root("go.sum").path.write_text(
-        get_mocked_data(data_dir, "non-vendored/go.sum")
-    )
+    if using_workspaces:
+        go_work_root_dir = module_dir.join_within_root("workspace_root")
+        mock_get_go_work.return_value = go_work_root_dir
+        go_work_root_dir.path.mkdir(parents=True)
+        go_work_root_dir.join_within_root("go.sum").path.write_text(
+            get_mocked_data(data_dir, "non-vendored/go.sum")
+        )
+    else:
+        mock_get_go_work.return_value = None
+        module_dir.path.mkdir(parents=True)
+        module_dir.join_within_root("go.sum").path.write_text(
+            get_mocked_data(data_dir, "non-vendored/go.sum")
+        )
 
     resolve_result = _resolve_gomod(module_dir, gomod_request, tmp_path, mock_version_resolver)
 
     if force_gomod_tidy:
-        assert mock_run.call_args_list[2][0][0] == [GO_CMD_PATH, "mod", "tidy"]
+        if using_workspaces:
+            assert mock_run.call_args_list[2][0][0] == [GO_CMD_PATH, "mod", "tidy"]
+        else:
+            assert mock_run.call_args_list[1][0][0] == [GO_CMD_PATH, "mod", "tidy"]
 
     # when not vendoring, go list should be called with -mod readonly
     listdeps_cmd = [
