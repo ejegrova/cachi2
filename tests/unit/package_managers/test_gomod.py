@@ -790,8 +790,16 @@ def test_get_go_work_root_when_go_work_is_outside_of_repo(tmp_path: Path) -> Non
         _get_go_work_root(repo_root, Go(), {"cwd": repo_root})
 
 
+# @pytest.mark.parametrize(
+#     "go_work_root", (None, RootedPath(tmp_path).join_within_root("workspace_dir"))
+# )
+@mock.patch("cachi2.core.package_managers.gomod._create_modules_from_parsed_data")
 @mock.patch("cachi2.core.package_managers.gomod.ModuleVersionResolver")
-def test_create_modules_from_parsed_data(mock_version_resolver: mock.Mock, tmp_path: Path) -> None:
+def test_create_modules_from_parsed_data(
+    go_work_root: RootedPath,
+    mock_version_resolver: mock.Mock,
+    tmp_path: Path,
+) -> None:
     main_module_dir = RootedPath(tmp_path).join_within_root("target-module")
     mock_version_resolver.get_golang_version.return_value = "v1.5.0"
 
@@ -870,9 +878,15 @@ def test_create_modules_from_parsed_data(mock_version_resolver: mock.Mock, tmp_p
             real_path="github.com/my-org/my-repo/sibling-path",
         ),
     ]
-
+    go_work_root = mock.Mock()
+    go_work_root.return_value = RootedPath("/path/to/workspace_dir")
     modules = _create_modules_from_parsed_data(
-        main_module, main_module_dir, parsed_modules, modules_in_go_sum, mock_version_resolver
+        main_module,
+        main_module_dir,
+        parsed_modules,
+        modules_in_go_sum,
+        mock_version_resolver,
+        go_work_root,
     )
 
     assert modules == expect_modules
